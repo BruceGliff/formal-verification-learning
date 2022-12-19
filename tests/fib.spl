@@ -1,0 +1,19 @@
+int n = ?;
+
+int a0 = 0;
+int a1 = 1;
+
+if (n == 0) {
+  a1 = 0;
+} else {
+  n = n - 1;
+  while (n > 0) {
+    int tmp = a1; 
+    a1 = a1 + a0;
+    a0 = tmp;  
+    n = n - 1;
+  }
+} 
+
+print(a1);
+

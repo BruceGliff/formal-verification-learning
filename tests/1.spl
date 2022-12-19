@@ -1,0 +1,4 @@
+int a = 5;
+int n;
+n = a + 1;
+print(n);
