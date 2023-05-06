@@ -3,109 +3,127 @@
 EXTENDS TLC, Integers, Sequences
 CONSTANTS Readers, Writers, MsgCount
 (*--algorithm message_queue
-variables queue = <<>>,
+variables queue = <<0>>,
          MsgRead = 0,
-         sem = 1,
+         Idx = 0,
          Res = [w \in Readers |-> ""],
          Msgs = MsgCount,
+         CASResW = [w \in Writers |-> ""],
+         CASResR = [w \in Readers |-> ""],
          RFlags = [w \in Readers |-> FALSE];
 
 
 define
-AllRead == MsgRead + Len(queue) + Msgs = MsgCount
+AllRead == MsgRead + Len(queue) + Msgs - 1 = MsgCount
 QueueValid == Len(queue) <= MsgCount
 end define;
 
-procedure Enqueue(val="") begin
-  En:
-    await sem = 1;
-    sem := 0;
-    if Msgs /= 0 then
-        unlock_1: sem := 1;
-        return;
+macro CAS(success, ptr, old, new) begin
+    if (ptr = old) then
+        ptr := new;
+        success := TRUE;
+    else
+        success := FALSE;
     end if;
+end macro
 
-   l1:
-    queue := Append(queue, val);
-    Msgs := Msgs - 1;
- 
-   unlock: sem := 1;
-    return;
+
+macro EndQ(Val, Sz) begin
+    Sz := Len(queue);
+    Val := queue[Sz];
+end macro
+
+
+procedure Enqueue() begin
+EnqBegin:
+    EndEq := TRUE;
+EnqLoopBegin:
+    while EndEq do
+        EnqLoop:
+            EndQ(Val1, Sz1);
+        EnqIf:
+            EndQ(Val2, Sz2);
+            if Val1 = Val2 then
+                if Val1 = Idx then
+                    EndQ(Val4, Sz4);
+                    SuccEq:
+                        \* Try to enqueue
+                        CAS(Succ, Idx, Val4, Val1 + 1);
+                        if Succ then
+                            queue := Append(queue, Val1);
+                            Msgs := Msgs - 1;
+                            EndEq := FALSE;
+                        end if;
+                else
+                    \* Try to swing tail.
+                    EndQ(Val3, Sz3);
+                    SwingTail:
+                        CAS(Succ, Val1, Val3, Val1 + 1);
+                end if;
+            end if;
+    end while;
 end procedure;
 
 procedure Dequeue() begin
-  Dq:
-    await sem = 1 /\ queue /= <<>>;
-    sem := 0;
-    
-    if queue /= <<>> then
-        unlock: sem := 1;
-        RFlags[self] := FALSE;
-        return;
-    else
-  l1:
-        Res[self] := Head(queue);
-  l2:
-        RFlags[self] := TRUE;
-  l3:
-        queue := Tail(queue);
-        MsgRead := MsgRead + 1;
-   unlock_succ: sem:= 1;
-        return;
-    end if;
+DeqBegin:
+    curr_msg := "ASD";
+
 end procedure;
     
 
 process writer \in Writers
+variables EndEq, Sz1, Sz2, Sz3, Sz4, Val1, Val2, Val3, Val4, Succ;
 begin Write:
     while Msgs /= 0 do
-        call Enqueue("msg");
+        call Enqueue();
     end while;
 end process;
 
 process reader \in Readers
 variables curr_msg = "", res = FALSE;
 begin Read:
-  while TRUE do
-    call Dequeue();
-    lab:
-        curr_msg := Res[self];
-        res := RFlags[self];
-        if res = TRUE then
-            assert(curr_msg = "msg")
-        else
-            assert(curr_msg = "")
-        end if;
-  end while;
+    curr_msg := "ASD"
 end process;
 end algorithm;*)
 
 
-\* BEGIN TRANSLATION (chksum(pcal) = "d3589bdb" /\ chksum(tla) = "91a60244")
-\* Label l1 of procedure Enqueue at line 29 col 5 changed to l1_
-\* Label unlock of procedure Enqueue at line 32 col 12 changed to unlock_
-VARIABLES queue, MsgRead, sem, Res, Msgs, RFlags, pc, stack
+\* BEGIN TRANSLATION (chksum(pcal) = "1eccabab" /\ chksum(tla) = "19ed7672")
+CONSTANT defaultInitValue
+VARIABLES queue, MsgRead, Idx, Res, Msgs, CASResW, CASResR, RFlags, pc, stack
 
 (* define statement *)
-AllRead == MsgRead + Len(queue) + Msgs = MsgCount
+AllRead == MsgRead + Len(queue) + Msgs - 1 = MsgCount
 QueueValid == Len(queue) <= MsgCount
 
-VARIABLES val, curr_msg, res
+VARIABLES EndEq, Sz1, Sz2, Sz3, Sz4, Val1, Val2, Val3, Val4, Succ, curr_msg, 
+          res
 
-vars == << queue, MsgRead, sem, Res, Msgs, RFlags, pc, stack, val, curr_msg, 
-           res >>
+vars == << queue, MsgRead, Idx, Res, Msgs, CASResW, CASResR, RFlags, pc, 
+           stack, EndEq, Sz1, Sz2, Sz3, Sz4, Val1, Val2, Val3, Val4, Succ, 
+           curr_msg, res >>
 
 ProcSet == (Writers) \cup (Readers)
 
 Init == (* Global variables *)
-        /\ queue = <<>>
+        /\ queue = <<0>>
         /\ MsgRead = 0
-        /\ sem = 1
+        /\ Idx = 0
         /\ Res = [w \in Readers |-> ""]
         /\ Msgs = MsgCount
+        /\ CASResW = [w \in Writers |-> ""]
+        /\ CASResR = [w \in Readers |-> ""]
         /\ RFlags = [w \in Readers |-> FALSE]
-        (* Procedure Enqueue *)
-        /\ val = [ self \in ProcSet |-> ""]
+        (* Process writer *)
+        /\ EndEq = [self \in Writers |-> defaultInitValue]
+        /\ Sz1 = [self \in Writers |-> defaultInitValue]
+        /\ Sz2 = [self \in Writers |-> defaultInitValue]
+        /\ Sz3 = [self \in Writers |-> defaultInitValue]
+        /\ Sz4 = [self \in Writers |-> defaultInitValue]
+        /\ Val1 = [self \in Writers |-> defaultInitValue]
+        /\ Val2 = [self \in Writers |-> defaultInitValue]
+        /\ Val3 = [self \in Writers |-> defaultInitValue]
+        /\ Val4 = [self \in Writers |-> defaultInitValue]
+        /\ Succ = [self \in Writers |-> defaultInitValue]
         (* Process reader *)
         /\ curr_msg = [self \in Readers |-> ""]
         /\ res = [self \in Readers |-> FALSE]
@@ -113,130 +131,128 @@ Init == (* Global variables *)
         /\ pc = [self \in ProcSet |-> CASE self \in Writers -> "Write"
                                         [] self \in Readers -> "Read"]
 
-En(self) == /\ pc[self] = "En"
-            /\ sem = 1
-            /\ sem' = 0
-            /\ IF Msgs /= 0
-                  THEN /\ pc' = [pc EXCEPT ![self] = "unlock_1"]
-                  ELSE /\ pc' = [pc EXCEPT ![self] = "l1_"]
-            /\ UNCHANGED << queue, MsgRead, Res, Msgs, RFlags, stack, val, 
-                            curr_msg, res >>
+EnqBegin(self) == /\ pc[self] = "EnqBegin"
+                  /\ EndEq' = [EndEq EXCEPT ![self] = TRUE]
+                  /\ pc' = [pc EXCEPT ![self] = "EnqLoopBegin"]
+                  /\ UNCHANGED << queue, MsgRead, Idx, Res, Msgs, CASResW, 
+                                  CASResR, RFlags, stack, Sz1, Sz2, Sz3, Sz4, 
+                                  Val1, Val2, Val3, Val4, Succ, curr_msg, res >>
 
-unlock_1(self) == /\ pc[self] = "unlock_1"
-                  /\ sem' = 1
-                  /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
-                  /\ val' = [val EXCEPT ![self] = Head(stack[self]).val]
-                  /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
-                  /\ UNCHANGED << queue, MsgRead, Res, Msgs, RFlags, curr_msg, 
-                                  res >>
+EnqLoopBegin(self) == /\ pc[self] = "EnqLoopBegin"
+                      /\ IF EndEq[self]
+                            THEN /\ pc' = [pc EXCEPT ![self] = "EnqLoop"]
+                            ELSE /\ pc' = [pc EXCEPT ![self] = "Error"]
+                      /\ UNCHANGED << queue, MsgRead, Idx, Res, Msgs, CASResW, 
+                                      CASResR, RFlags, stack, EndEq, Sz1, Sz2, 
+                                      Sz3, Sz4, Val1, Val2, Val3, Val4, Succ, 
+                                      curr_msg, res >>
 
-l1_(self) == /\ pc[self] = "l1_"
-             /\ queue' = Append(queue, val[self])
-             /\ Msgs' = Msgs - 1
-             /\ pc' = [pc EXCEPT ![self] = "unlock_"]
-             /\ UNCHANGED << MsgRead, sem, Res, RFlags, stack, val, curr_msg, 
-                             res >>
+EnqLoop(self) == /\ pc[self] = "EnqLoop"
+                 /\ Sz1' = [Sz1 EXCEPT ![self] = Len(queue)]
+                 /\ Val1' = [Val1 EXCEPT ![self] = queue[Sz1'[self]]]
+                 /\ pc' = [pc EXCEPT ![self] = "EnqIf"]
+                 /\ UNCHANGED << queue, MsgRead, Idx, Res, Msgs, CASResW, 
+                                 CASResR, RFlags, stack, EndEq, Sz2, Sz3, Sz4, 
+                                 Val2, Val3, Val4, Succ, curr_msg, res >>
 
-unlock_(self) == /\ pc[self] = "unlock_"
-                 /\ sem' = 1
-                 /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
-                 /\ val' = [val EXCEPT ![self] = Head(stack[self]).val]
-                 /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
-                 /\ UNCHANGED << queue, MsgRead, Res, Msgs, RFlags, curr_msg, 
-                                 res >>
+EnqIf(self) == /\ pc[self] = "EnqIf"
+               /\ Sz2' = [Sz2 EXCEPT ![self] = Len(queue)]
+               /\ Val2' = [Val2 EXCEPT ![self] = queue[Sz2'[self]]]
+               /\ IF Val1[self] = Val2'[self]
+                     THEN /\ IF Val1[self] = Idx
+                                THEN /\ Sz4' = [Sz4 EXCEPT ![self] = Len(queue)]
+                                     /\ Val4' = [Val4 EXCEPT ![self] = queue[Sz4'[self]]]
+                                     /\ pc' = [pc EXCEPT ![self] = "SuccEq"]
+                                     /\ UNCHANGED << Sz3, Val3 >>
+                                ELSE /\ Sz3' = [Sz3 EXCEPT ![self] = Len(queue)]
+                                     /\ Val3' = [Val3 EXCEPT ![self] = queue[Sz3'[self]]]
+                                     /\ pc' = [pc EXCEPT ![self] = "SwingTail"]
+                                     /\ UNCHANGED << Sz4, Val4 >>
+                     ELSE /\ pc' = [pc EXCEPT ![self] = "EnqLoopBegin"]
+                          /\ UNCHANGED << Sz3, Sz4, Val3, Val4 >>
+               /\ UNCHANGED << queue, MsgRead, Idx, Res, Msgs, CASResW, 
+                               CASResR, RFlags, stack, EndEq, Sz1, Val1, Succ, 
+                               curr_msg, res >>
 
-Enqueue(self) == En(self) \/ unlock_1(self) \/ l1_(self) \/ unlock_(self)
+SuccEq(self) == /\ pc[self] = "SuccEq"
+                /\ IF (Idx = Val4[self])
+                      THEN /\ Idx' = Val1[self] + 1
+                           /\ Succ' = [Succ EXCEPT ![self] = TRUE]
+                      ELSE /\ Succ' = [Succ EXCEPT ![self] = FALSE]
+                           /\ Idx' = Idx
+                /\ IF Succ'[self]
+                      THEN /\ queue' = Append(queue, Val1[self])
+                           /\ Msgs' = Msgs - 1
+                           /\ EndEq' = [EndEq EXCEPT ![self] = FALSE]
+                      ELSE /\ TRUE
+                           /\ UNCHANGED << queue, Msgs, EndEq >>
+                /\ pc' = [pc EXCEPT ![self] = "EnqLoopBegin"]
+                /\ UNCHANGED << MsgRead, Res, CASResW, CASResR, RFlags, stack, 
+                                Sz1, Sz2, Sz3, Sz4, Val1, Val2, Val3, Val4, 
+                                curr_msg, res >>
 
-Dq(self) == /\ pc[self] = "Dq"
-            /\ sem = 1 /\ queue /= <<>>
-            /\ sem' = 0
-            /\ IF queue /= <<>>
-                  THEN /\ pc' = [pc EXCEPT ![self] = "unlock"]
-                  ELSE /\ pc' = [pc EXCEPT ![self] = "l1"]
-            /\ UNCHANGED << queue, MsgRead, Res, Msgs, RFlags, stack, val, 
-                            curr_msg, res >>
+SwingTail(self) == /\ pc[self] = "SwingTail"
+                   /\ IF (Val1[self] = Val3[self])
+                         THEN /\ Val1' = [Val1 EXCEPT ![self] = Val1[self] + 1]
+                              /\ Succ' = [Succ EXCEPT ![self] = TRUE]
+                         ELSE /\ Succ' = [Succ EXCEPT ![self] = FALSE]
+                              /\ Val1' = Val1
+                   /\ pc' = [pc EXCEPT ![self] = "EnqLoopBegin"]
+                   /\ UNCHANGED << queue, MsgRead, Idx, Res, Msgs, CASResW, 
+                                   CASResR, RFlags, stack, EndEq, Sz1, Sz2, 
+                                   Sz3, Sz4, Val2, Val3, Val4, curr_msg, res >>
 
-unlock(self) == /\ pc[self] = "unlock"
-                /\ sem' = 1
-                /\ RFlags' = [RFlags EXCEPT ![self] = FALSE]
-                /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
-                /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
-                /\ UNCHANGED << queue, MsgRead, Res, Msgs, val, curr_msg, res >>
+Enqueue(self) == EnqBegin(self) \/ EnqLoopBegin(self) \/ EnqLoop(self)
+                    \/ EnqIf(self) \/ SuccEq(self) \/ SwingTail(self)
 
-l1(self) == /\ pc[self] = "l1"
-            /\ Res' = [Res EXCEPT ![self] = Head(queue)]
-            /\ pc' = [pc EXCEPT ![self] = "l2"]
-            /\ UNCHANGED << queue, MsgRead, sem, Msgs, RFlags, stack, val, 
-                            curr_msg, res >>
+DeqBegin(self) == /\ pc[self] = "DeqBegin"
+                  /\ curr_msg' = [curr_msg EXCEPT ![self] = "ASD"]
+                  /\ pc' = [pc EXCEPT ![self] = "Error"]
+                  /\ UNCHANGED << queue, MsgRead, Idx, Res, Msgs, CASResW, 
+                                  CASResR, RFlags, stack, EndEq, Sz1, Sz2, Sz3, 
+                                  Sz4, Val1, Val2, Val3, Val4, Succ, res >>
 
-l2(self) == /\ pc[self] = "l2"
-            /\ RFlags' = [RFlags EXCEPT ![self] = TRUE]
-            /\ pc' = [pc EXCEPT ![self] = "l3"]
-            /\ UNCHANGED << queue, MsgRead, sem, Res, Msgs, stack, val, 
-                            curr_msg, res >>
-
-l3(self) == /\ pc[self] = "l3"
-            /\ queue' = Tail(queue)
-            /\ MsgRead' = MsgRead + 1
-            /\ pc' = [pc EXCEPT ![self] = "unlock_succ"]
-            /\ UNCHANGED << sem, Res, Msgs, RFlags, stack, val, curr_msg, res >>
-
-unlock_succ(self) == /\ pc[self] = "unlock_succ"
-                     /\ sem' = 1
-                     /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
-                     /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
-                     /\ UNCHANGED << queue, MsgRead, Res, Msgs, RFlags, val, 
-                                     curr_msg, res >>
-
-Dequeue(self) == Dq(self) \/ unlock(self) \/ l1(self) \/ l2(self)
-                    \/ l3(self) \/ unlock_succ(self)
+Dequeue(self) == DeqBegin(self)
 
 Write(self) == /\ pc[self] = "Write"
                /\ IF Msgs /= 0
-                     THEN /\ /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "Enqueue",
-                                                                      pc        |->  "Write",
-                                                                      val       |->  val[self] ] >>
-                                                                  \o stack[self]]
-                             /\ val' = [val EXCEPT ![self] = "msg"]
-                          /\ pc' = [pc EXCEPT ![self] = "En"]
+                     THEN /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "Enqueue",
+                                                                   pc        |->  "Write" ] >>
+                                                               \o stack[self]]
+                          /\ pc' = [pc EXCEPT ![self] = "EnqBegin"]
                      ELSE /\ pc' = [pc EXCEPT ![self] = "Done"]
-                          /\ UNCHANGED << stack, val >>
-               /\ UNCHANGED << queue, MsgRead, sem, Res, Msgs, RFlags, 
-                               curr_msg, res >>
+                          /\ stack' = stack
+               /\ UNCHANGED << queue, MsgRead, Idx, Res, Msgs, CASResW, 
+                               CASResR, RFlags, EndEq, Sz1, Sz2, Sz3, Sz4, 
+                               Val1, Val2, Val3, Val4, Succ, curr_msg, res >>
 
 writer(self) == Write(self)
 
 Read(self) == /\ pc[self] = "Read"
-              /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "Dequeue",
-                                                       pc        |->  "lab" ] >>
-                                                   \o stack[self]]
-              /\ pc' = [pc EXCEPT ![self] = "Dq"]
-              /\ UNCHANGED << queue, MsgRead, sem, Res, Msgs, RFlags, val, 
-                              curr_msg, res >>
+              /\ curr_msg' = [curr_msg EXCEPT ![self] = "ASD"]
+              /\ pc' = [pc EXCEPT ![self] = "Done"]
+              /\ UNCHANGED << queue, MsgRead, Idx, Res, Msgs, CASResW, CASResR, 
+                              RFlags, stack, EndEq, Sz1, Sz2, Sz3, Sz4, Val1, 
+                              Val2, Val3, Val4, Succ, res >>
 
-lab(self) == /\ pc[self] = "lab"
-             /\ curr_msg' = [curr_msg EXCEPT ![self] = Res[self]]
-             /\ res' = [res EXCEPT ![self] = RFlags[self]]
-             /\ IF res'[self] = TRUE
-                   THEN /\ Assert((curr_msg'[self] = "msg"), 
-                                  "Failure of assertion at line 75, column 13.")
-                   ELSE /\ Assert((curr_msg'[self] = ""), 
-                                  "Failure of assertion at line 77, column 13.")
-             /\ pc' = [pc EXCEPT ![self] = "Read"]
-             /\ UNCHANGED << queue, MsgRead, sem, Res, Msgs, RFlags, stack, 
-                             val >>
+reader(self) == Read(self)
 
-reader(self) == Read(self) \/ lab(self)
+(* Allow infinite stuttering to prevent deadlock on termination. *)
+Terminating == /\ \A self \in ProcSet: pc[self] = "Done"
+               /\ UNCHANGED vars
 
 Next == (\E self \in ProcSet: Enqueue(self) \/ Dequeue(self))
            \/ (\E self \in Writers: writer(self))
            \/ (\E self \in Readers: reader(self))
+           \/ Terminating
 
 Spec == Init /\ [][Next]_vars
+
+Termination == <>(\A self \in ProcSet: pc[self] = "Done")
 
 \* END TRANSLATION 
 
 =============================================================================
 \* Modification History
-\* Last modified Sat May 06 12:26:29 MSK 2023 by bg
+\* Last modified Sat May 06 14:11:11 MSK 2023 by bg
 \* Created Sat Apr 22 10:57:36 MSK 2023 by bg
