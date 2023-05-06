@@ -13,12 +13,18 @@ variables queue = <<>>,
 
 define
 AllRead == MsgRead + Len(queue) + Msgs = MsgCount
+QueueValid == Len(queue) <= MsgCount
 end define;
 
 procedure Enqueue(val="") begin
   En:
     await sem = 1;
     sem := 0;
+    if Msgs /= 0 then
+        unlock_1: sem := 1;
+        return;
+    end if;
+
    l1:
     queue := Append(queue, val);
     Msgs := Msgs - 1;
@@ -75,13 +81,14 @@ end process;
 end algorithm;*)
 
 
-\* BEGIN TRANSLATION (chksum(pcal) = "1fe73c46" /\ chksum(tla) = "781738a4")
-\* Label l1 of procedure Enqueue at line 23 col 5 changed to l1_
-\* Label unlock of procedure Enqueue at line 26 col 12 changed to unlock_
+\* BEGIN TRANSLATION (chksum(pcal) = "d3589bdb" /\ chksum(tla) = "91a60244")
+\* Label l1 of procedure Enqueue at line 29 col 5 changed to l1_
+\* Label unlock of procedure Enqueue at line 32 col 12 changed to unlock_
 VARIABLES queue, MsgRead, sem, Res, Msgs, RFlags, pc, stack
 
 (* define statement *)
 AllRead == MsgRead + Len(queue) + Msgs = MsgCount
+QueueValid == Len(queue) <= MsgCount
 
 VARIABLES val, curr_msg, res
 
@@ -109,9 +116,19 @@ Init == (* Global variables *)
 En(self) == /\ pc[self] = "En"
             /\ sem = 1
             /\ sem' = 0
-            /\ pc' = [pc EXCEPT ![self] = "l1_"]
+            /\ IF Msgs /= 0
+                  THEN /\ pc' = [pc EXCEPT ![self] = "unlock_1"]
+                  ELSE /\ pc' = [pc EXCEPT ![self] = "l1_"]
             /\ UNCHANGED << queue, MsgRead, Res, Msgs, RFlags, stack, val, 
                             curr_msg, res >>
+
+unlock_1(self) == /\ pc[self] = "unlock_1"
+                  /\ sem' = 1
+                  /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
+                  /\ val' = [val EXCEPT ![self] = Head(stack[self]).val]
+                  /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
+                  /\ UNCHANGED << queue, MsgRead, Res, Msgs, RFlags, curr_msg, 
+                                  res >>
 
 l1_(self) == /\ pc[self] = "l1_"
              /\ queue' = Append(queue, val[self])
@@ -128,7 +145,7 @@ unlock_(self) == /\ pc[self] = "unlock_"
                  /\ UNCHANGED << queue, MsgRead, Res, Msgs, RFlags, curr_msg, 
                                  res >>
 
-Enqueue(self) == En(self) \/ l1_(self) \/ unlock_(self)
+Enqueue(self) == En(self) \/ unlock_1(self) \/ l1_(self) \/ unlock_(self)
 
 Dq(self) == /\ pc[self] = "Dq"
             /\ sem = 1 /\ queue /= <<>>
@@ -202,9 +219,9 @@ lab(self) == /\ pc[self] = "lab"
              /\ res' = [res EXCEPT ![self] = RFlags[self]]
              /\ IF res'[self] = TRUE
                    THEN /\ Assert((curr_msg'[self] = "msg"), 
-                                  "Failure of assertion at line 69, column 13.")
+                                  "Failure of assertion at line 75, column 13.")
                    ELSE /\ Assert((curr_msg'[self] = ""), 
-                                  "Failure of assertion at line 71, column 13.")
+                                  "Failure of assertion at line 77, column 13.")
              /\ pc' = [pc EXCEPT ![self] = "Read"]
              /\ UNCHANGED << queue, MsgRead, sem, Res, Msgs, RFlags, stack, 
                              val >>
@@ -221,5 +238,5 @@ Spec == Init /\ [][Next]_vars
 
 =============================================================================
 \* Modification History
-\* Last modified Wed May 03 09:54:35 MSK 2023 by bg
+\* Last modified Sat May 06 12:20:47 MSK 2023 by bg
 \* Created Sat Apr 22 10:57:36 MSK 2023 by bg
