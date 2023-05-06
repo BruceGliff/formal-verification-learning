@@ -3,6 +3,8 @@
 EXTENDS TLC, Integers, Sequences
 CONSTANTS Readers, Writers, MsgCount
 (*--algorithm message_queue
+\* The first element of queue is 0 to indicate end of queue.
+\* Later queue will be appended with incremented Idx, therefore other 0 in queue.
 variables queue = <<0>>,
          MsgRead = 0,
          Idx = 0,
@@ -39,11 +41,13 @@ EnqLoopBegin:
             if Val1 = Idx then
                 GetTail1: EndQ(Val4);
                 SuccEnq: CAS(Succ, Idx, Val4, Val1 + 1);
+                \* This 'if' atomic with CAS above as encapsulate behaviour of atomically update queue.
+                \* Same as with SuccDeq
                 if Succ then
                     if Msgs /= 0 then
                         return;
                     else
-                        queue := Append(queue, Val1);
+                        queue := Append(queue, Idx);
                         Msgs := Msgs - 1;
                         return;
                     end if;
@@ -74,7 +78,7 @@ DeqLoopBegin:
                     end if;
                 else
                     DeqHead2: H2 := Head(queue);
-                    RSuccEnq: CAS(RSucc, H1, H2, H1 + 1);
+                    SuccDeq: CAS(RSucc, H1, H2, H1 + 1);
                     if Succ then
                         queue := Tail(queue);
                         MsgRead := MsgRead + 1;
@@ -99,13 +103,15 @@ process reader \in Readers
 variables H1 = 0, H2 = 0, RVal1 = 0, RVal2 = 0, RSucc = TRUE;
 begin Read:
     while TRUE do
-        call Dequeue();
+    \* This await not for lock queue but work-around infinite states of reading empty queue.
+        await Len(queue) > 1;
+        Deq: call Dequeue();
     end while;
 end process;
 end algorithm;*)
 
 
-\* BEGIN TRANSLATION (chksum(pcal) = "f4b30707" /\ chksum(tla) = "3a4cacae")
+\* BEGIN TRANSLATION (chksum(pcal) = "ca488828" /\ chksum(tla) = "a5244735")
 VARIABLES queue, MsgRead, Idx, Msgs, RFlags, pc, stack
 
 (* define statement *)
@@ -182,7 +188,7 @@ SuccEnq(self) == /\ pc[self] = "SuccEnq"
                                   THEN /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
                                        /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
                                        /\ UNCHANGED << queue, Msgs >>
-                                  ELSE /\ queue' = Append(queue, Val1[self])
+                                  ELSE /\ queue' = Append(queue, Idx')
                                        /\ Msgs' = Msgs - 1
                                        /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
                                        /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
@@ -247,27 +253,27 @@ DeqHead1(self) == /\ pc[self] = "DeqHead1"
 
 DeqHead2(self) == /\ pc[self] = "DeqHead2"
                   /\ H2' = [H2 EXCEPT ![self] = Head(queue)]
-                  /\ pc' = [pc EXCEPT ![self] = "RSuccEnq"]
+                  /\ pc' = [pc EXCEPT ![self] = "SuccDeq"]
                   /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, stack, 
                                   Val1, Val2, Val3, Val4, Succ, H1, RVal1, 
                                   RVal2, RSucc >>
 
-RSuccEnq(self) == /\ pc[self] = "RSuccEnq"
-                  /\ IF (H1[self] = H2[self])
-                        THEN /\ H1' = [H1 EXCEPT ![self] = H1[self] + 1]
-                             /\ RSucc' = [RSucc EXCEPT ![self] = TRUE]
-                        ELSE /\ RSucc' = [RSucc EXCEPT ![self] = FALSE]
-                             /\ H1' = H1
-                  /\ IF Succ[self]
-                        THEN /\ queue' = Tail(queue)
-                             /\ MsgRead' = MsgRead + 1
-                             /\ RFlags' = [RFlags EXCEPT ![self] = TRUE]
-                             /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
-                             /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
-                        ELSE /\ pc' = [pc EXCEPT ![self] = "DeqLoopBegin"]
-                             /\ UNCHANGED << queue, MsgRead, RFlags, stack >>
-                  /\ UNCHANGED << Idx, Msgs, Val1, Val2, Val3, Val4, Succ, H2, 
-                                  RVal1, RVal2 >>
+SuccDeq(self) == /\ pc[self] = "SuccDeq"
+                 /\ IF (H1[self] = H2[self])
+                       THEN /\ H1' = [H1 EXCEPT ![self] = H1[self] + 1]
+                            /\ RSucc' = [RSucc EXCEPT ![self] = TRUE]
+                       ELSE /\ RSucc' = [RSucc EXCEPT ![self] = FALSE]
+                            /\ H1' = H1
+                 /\ IF Succ[self]
+                       THEN /\ queue' = Tail(queue)
+                            /\ MsgRead' = MsgRead + 1
+                            /\ RFlags' = [RFlags EXCEPT ![self] = TRUE]
+                            /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
+                            /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
+                       ELSE /\ pc' = [pc EXCEPT ![self] = "DeqLoopBegin"]
+                            /\ UNCHANGED << queue, MsgRead, RFlags, stack >>
+                 /\ UNCHANGED << Idx, Msgs, Val1, Val2, Val3, Val4, Succ, H2, 
+                                 RVal1, RVal2 >>
 
 QueueIsEmpty(self) == /\ pc[self] = "QueueIsEmpty"
                       /\ RFlags' = [RFlags EXCEPT ![self] = FALSE]
@@ -296,7 +302,7 @@ AdvanceTail(self) == /\ pc[self] = "AdvanceTail"
                                      RVal2 >>
 
 Dequeue(self) == DeqLoopBegin(self) \/ DeqLoop(self) \/ DeqTail(self)
-                    \/ DeqHead1(self) \/ DeqHead2(self) \/ RSuccEnq(self)
+                    \/ DeqHead1(self) \/ DeqHead2(self) \/ SuccDeq(self)
                     \/ QueueIsEmpty(self) \/ GetTail3(self)
                     \/ AdvanceTail(self)
 
@@ -314,14 +320,21 @@ Write(self) == /\ pc[self] = "Write"
 writer(self) == Write(self)
 
 Read(self) == /\ pc[self] = "Read"
-              /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "Dequeue",
-                                                       pc        |->  "Read" ] >>
-                                                   \o stack[self]]
-              /\ pc' = [pc EXCEPT ![self] = "DeqLoopBegin"]
-              /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, Val1, Val2, 
-                              Val3, Val4, Succ, H1, H2, RVal1, RVal2, RSucc >>
+              /\ Len(queue) > 1
+              /\ pc' = [pc EXCEPT ![self] = "Deq"]
+              /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, stack, Val1, 
+                              Val2, Val3, Val4, Succ, H1, H2, RVal1, RVal2, 
+                              RSucc >>
 
-reader(self) == Read(self)
+Deq(self) == /\ pc[self] = "Deq"
+             /\ stack' = [stack EXCEPT ![self] = << [ procedure |->  "Dequeue",
+                                                      pc        |->  "Read" ] >>
+                                                  \o stack[self]]
+             /\ pc' = [pc EXCEPT ![self] = "DeqLoopBegin"]
+             /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, Val1, Val2, 
+                             Val3, Val4, Succ, H1, H2, RVal1, RVal2, RSucc >>
+
+reader(self) == Read(self) \/ Deq(self)
 
 Next == (\E self \in ProcSet: Enqueue(self) \/ Dequeue(self))
            \/ (\E self \in Writers: writer(self))
@@ -333,5 +346,5 @@ Spec == Init /\ [][Next]_vars
 
 =============================================================================
 \* Modification History
-\* Last modified Sat May 06 21:00:23 MSK 2023 by bg
+\* Last modified Sat May 06 21:16:15 MSK 2023 by bg
 \* Created Sat Apr 22 10:57:36 MSK 2023 by bg
