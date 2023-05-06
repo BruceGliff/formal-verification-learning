@@ -25,20 +25,19 @@ macro CAS(success, ptr, old, new) begin
 end macro
 
 
-macro EndQ(Val, Sz) begin
-    Sz := Len(queue);
-    Val := queue[Sz];
+macro EndQ(Val) begin
+    Val := queue[Len(queue)];
 end macro
 
 
 procedure Enqueue() begin
 EnqLoopBegin:
     while TRUE do
-        EnqLoop: EndQ(Val1, Sz1);
-        EnqIf: EndQ(Val2, Sz2);
+        EnqLoop: EndQ(Val1);
+        EnqIf: EndQ(Val2);
         if Val1 = Val2 then
             if Val1 = Idx then
-                GetTail1: EndQ(Val4, Sz4);
+                GetTail1: EndQ(Val4);
                 SuccEnq: CAS(Succ, Idx, Val4, Val1 + 1);
                 if Succ then
                     if Msgs /= 0 then
@@ -51,7 +50,7 @@ EnqLoopBegin:
                 end if;
             else
                 \* Try to swing tail.
-                GetTail2: EndQ(Val3, Sz3);
+                GetTail2: EndQ(Val3);
                 SwingTail: CAS(Succ, Val1, Val3, Val1 + 1);
             end if;
         end if;
@@ -62,7 +61,7 @@ procedure Dequeue() begin
 DeqLoopBegin:
     while TRUE do
         DeqLoop: H1 := Head(queue);
-        DeqTail: EndQ(RVal1, RSz1);
+        DeqTail: EndQ(RVal1);
         DeqHead1:
             if H1 = Head(queue) then
                 if H1 = Val1 then
@@ -70,7 +69,7 @@ DeqLoopBegin:
                         QueueIsEmpty: RFlags[self] := FALSE;
                             return;
                     else
-                        GetTail3: EndQ(RVal2, RSz2);
+                        GetTail3: EndQ(RVal2);
                         AdvanceTail: CAS(RSucc, RVal1, RVal2, Val1 + 1);
                     end if;
                 else
@@ -89,7 +88,7 @@ end procedure;
     
 
 process writer \in Writers
-variables  Sz1 = 0, Sz2 = 0, Sz3 = 0, Sz4 = 0, Val1 = 0, Val2 = 0, Val3 = 0, Val4 = 0, Succ = TRUE;
+variables Val1 = 0, Val2 = 0, Val3 = 0, Val4 = 0, Succ = TRUE;
 begin Write:
     while Msgs /= 0 do
         call Enqueue();
@@ -97,7 +96,7 @@ begin Write:
 end process;
 
 process reader \in Readers
-variables H1 = 0, H2 = 0, RSz1 = 0, RSz2 = 0, RVal1 = 0, RVal2 = 0, RSucc = TRUE;
+variables H1 = 0, H2 = 0, RVal1 = 0, RVal2 = 0, RSucc = TRUE;
 begin Read:
     while TRUE do
         call Dequeue();
@@ -106,19 +105,17 @@ end process;
 end algorithm;*)
 
 
-\* BEGIN TRANSLATION (chksum(pcal) = "1132bdd6" /\ chksum(tla) = "44272464")
+\* BEGIN TRANSLATION (chksum(pcal) = "f4b30707" /\ chksum(tla) = "3a4cacae")
 VARIABLES queue, MsgRead, Idx, Msgs, RFlags, pc, stack
 
 (* define statement *)
 AllRead == MsgRead + Len(queue) + Msgs - 1 = MsgCount
 QueueValid == Len(queue) <= MsgCount + 1 /\ Len(queue) >= 1
 
-VARIABLES Sz1, Sz2, Sz3, Sz4, Val1, Val2, Val3, Val4, Succ, H1, H2, RSz1, 
-          RSz2, RVal1, RVal2, RSucc
+VARIABLES Val1, Val2, Val3, Val4, Succ, H1, H2, RVal1, RVal2, RSucc
 
-vars == << queue, MsgRead, Idx, Msgs, RFlags, pc, stack, Sz1, Sz2, Sz3, Sz4, 
-           Val1, Val2, Val3, Val4, Succ, H1, H2, RSz1, RSz2, RVal1, RVal2, 
-           RSucc >>
+vars == << queue, MsgRead, Idx, Msgs, RFlags, pc, stack, Val1, Val2, Val3, 
+           Val4, Succ, H1, H2, RVal1, RVal2, RSucc >>
 
 ProcSet == (Writers) \cup (Readers)
 
@@ -129,10 +126,6 @@ Init == (* Global variables *)
         /\ Msgs = MsgCount
         /\ RFlags = [w \in Readers |-> FALSE]
         (* Process writer *)
-        /\ Sz1 = [self \in Writers |-> 0]
-        /\ Sz2 = [self \in Writers |-> 0]
-        /\ Sz3 = [self \in Writers |-> 0]
-        /\ Sz4 = [self \in Writers |-> 0]
         /\ Val1 = [self \in Writers |-> 0]
         /\ Val2 = [self \in Writers |-> 0]
         /\ Val3 = [self \in Writers |-> 0]
@@ -141,8 +134,6 @@ Init == (* Global variables *)
         (* Process reader *)
         /\ H1 = [self \in Readers |-> 0]
         /\ H2 = [self \in Readers |-> 0]
-        /\ RSz1 = [self \in Readers |-> 0]
-        /\ RSz2 = [self \in Readers |-> 0]
         /\ RVal1 = [self \in Readers |-> 0]
         /\ RVal2 = [self \in Readers |-> 0]
         /\ RSucc = [self \in Readers |-> TRUE]
@@ -153,37 +144,32 @@ Init == (* Global variables *)
 EnqLoopBegin(self) == /\ pc[self] = "EnqLoopBegin"
                       /\ pc' = [pc EXCEPT ![self] = "EnqLoop"]
                       /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, stack, 
-                                      Sz1, Sz2, Sz3, Sz4, Val1, Val2, Val3, 
-                                      Val4, Succ, H1, H2, RSz1, RSz2, RVal1, 
-                                      RVal2, RSucc >>
+                                      Val1, Val2, Val3, Val4, Succ, H1, H2, 
+                                      RVal1, RVal2, RSucc >>
 
 EnqLoop(self) == /\ pc[self] = "EnqLoop"
-                 /\ Sz1' = [Sz1 EXCEPT ![self] = Len(queue)]
-                 /\ Val1' = [Val1 EXCEPT ![self] = queue[Sz1'[self]]]
+                 /\ Val1' = [Val1 EXCEPT ![self] = queue[Len(queue)]]
                  /\ pc' = [pc EXCEPT ![self] = "EnqIf"]
-                 /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, stack, Sz2, 
-                                 Sz3, Sz4, Val2, Val3, Val4, Succ, H1, H2, 
-                                 RSz1, RSz2, RVal1, RVal2, RSucc >>
+                 /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, stack, 
+                                 Val2, Val3, Val4, Succ, H1, H2, RVal1, RVal2, 
+                                 RSucc >>
 
 EnqIf(self) == /\ pc[self] = "EnqIf"
-               /\ Sz2' = [Sz2 EXCEPT ![self] = Len(queue)]
-               /\ Val2' = [Val2 EXCEPT ![self] = queue[Sz2'[self]]]
+               /\ Val2' = [Val2 EXCEPT ![self] = queue[Len(queue)]]
                /\ IF Val1[self] = Val2'[self]
                      THEN /\ IF Val1[self] = Idx
                                 THEN /\ pc' = [pc EXCEPT ![self] = "GetTail1"]
                                 ELSE /\ pc' = [pc EXCEPT ![self] = "GetTail2"]
                      ELSE /\ pc' = [pc EXCEPT ![self] = "EnqLoopBegin"]
-               /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, stack, Sz1, 
-                               Sz3, Sz4, Val1, Val3, Val4, Succ, H1, H2, RSz1, 
-                               RSz2, RVal1, RVal2, RSucc >>
+               /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, stack, Val1, 
+                               Val3, Val4, Succ, H1, H2, RVal1, RVal2, RSucc >>
 
 GetTail1(self) == /\ pc[self] = "GetTail1"
-                  /\ Sz4' = [Sz4 EXCEPT ![self] = Len(queue)]
-                  /\ Val4' = [Val4 EXCEPT ![self] = queue[Sz4'[self]]]
+                  /\ Val4' = [Val4 EXCEPT ![self] = queue[Len(queue)]]
                   /\ pc' = [pc EXCEPT ![self] = "SuccEnq"]
                   /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, stack, 
-                                  Sz1, Sz2, Sz3, Val1, Val2, Val3, Succ, H1, 
-                                  H2, RSz1, RSz2, RVal1, RVal2, RSucc >>
+                                  Val1, Val2, Val3, Succ, H1, H2, RVal1, RVal2, 
+                                  RSucc >>
 
 SuccEnq(self) == /\ pc[self] = "SuccEnq"
                  /\ IF (Idx = Val4[self])
@@ -202,17 +188,15 @@ SuccEnq(self) == /\ pc[self] = "SuccEnq"
                                        /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
                        ELSE /\ pc' = [pc EXCEPT ![self] = "EnqLoopBegin"]
                             /\ UNCHANGED << queue, Msgs, stack >>
-                 /\ UNCHANGED << MsgRead, RFlags, Sz1, Sz2, Sz3, Sz4, Val1, 
-                                 Val2, Val3, Val4, H1, H2, RSz1, RSz2, RVal1, 
-                                 RVal2, RSucc >>
+                 /\ UNCHANGED << MsgRead, RFlags, Val1, Val2, Val3, Val4, H1, 
+                                 H2, RVal1, RVal2, RSucc >>
 
 GetTail2(self) == /\ pc[self] = "GetTail2"
-                  /\ Sz3' = [Sz3 EXCEPT ![self] = Len(queue)]
-                  /\ Val3' = [Val3 EXCEPT ![self] = queue[Sz3'[self]]]
+                  /\ Val3' = [Val3 EXCEPT ![self] = queue[Len(queue)]]
                   /\ pc' = [pc EXCEPT ![self] = "SwingTail"]
                   /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, stack, 
-                                  Sz1, Sz2, Sz4, Val1, Val2, Val4, Succ, H1, 
-                                  H2, RSz1, RSz2, RVal1, RVal2, RSucc >>
+                                  Val1, Val2, Val4, Succ, H1, H2, RVal1, RVal2, 
+                                  RSucc >>
 
 SwingTail(self) == /\ pc[self] = "SwingTail"
                    /\ IF (Val1[self] = Val3[self])
@@ -222,8 +206,8 @@ SwingTail(self) == /\ pc[self] = "SwingTail"
                               /\ Val1' = Val1
                    /\ pc' = [pc EXCEPT ![self] = "EnqLoopBegin"]
                    /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, stack, 
-                                   Sz1, Sz2, Sz3, Sz4, Val2, Val3, Val4, H1, 
-                                   H2, RSz1, RSz2, RVal1, RVal2, RSucc >>
+                                   Val2, Val3, Val4, H1, H2, RVal1, RVal2, 
+                                   RSucc >>
 
 Enqueue(self) == EnqLoopBegin(self) \/ EnqLoop(self) \/ EnqIf(self)
                     \/ GetTail1(self) \/ SuccEnq(self) \/ GetTail2(self)
@@ -232,24 +216,22 @@ Enqueue(self) == EnqLoopBegin(self) \/ EnqLoop(self) \/ EnqIf(self)
 DeqLoopBegin(self) == /\ pc[self] = "DeqLoopBegin"
                       /\ pc' = [pc EXCEPT ![self] = "DeqLoop"]
                       /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, stack, 
-                                      Sz1, Sz2, Sz3, Sz4, Val1, Val2, Val3, 
-                                      Val4, Succ, H1, H2, RSz1, RSz2, RVal1, 
-                                      RVal2, RSucc >>
+                                      Val1, Val2, Val3, Val4, Succ, H1, H2, 
+                                      RVal1, RVal2, RSucc >>
 
 DeqLoop(self) == /\ pc[self] = "DeqLoop"
                  /\ H1' = [H1 EXCEPT ![self] = Head(queue)]
                  /\ pc' = [pc EXCEPT ![self] = "DeqTail"]
-                 /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, stack, Sz1, 
-                                 Sz2, Sz3, Sz4, Val1, Val2, Val3, Val4, Succ, 
-                                 H2, RSz1, RSz2, RVal1, RVal2, RSucc >>
+                 /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, stack, 
+                                 Val1, Val2, Val3, Val4, Succ, H2, RVal1, 
+                                 RVal2, RSucc >>
 
 DeqTail(self) == /\ pc[self] = "DeqTail"
-                 /\ RSz1' = [RSz1 EXCEPT ![self] = Len(queue)]
-                 /\ RVal1' = [RVal1 EXCEPT ![self] = queue[RSz1'[self]]]
+                 /\ RVal1' = [RVal1 EXCEPT ![self] = queue[Len(queue)]]
                  /\ pc' = [pc EXCEPT ![self] = "DeqHead1"]
-                 /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, stack, Sz1, 
-                                 Sz2, Sz3, Sz4, Val1, Val2, Val3, Val4, Succ, 
-                                 H1, H2, RSz2, RVal2, RSucc >>
+                 /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, stack, 
+                                 Val1, Val2, Val3, Val4, Succ, H1, H2, RVal2, 
+                                 RSucc >>
 
 DeqHead1(self) == /\ pc[self] = "DeqHead1"
                   /\ IF H1[self] = Head(queue)
@@ -260,16 +242,15 @@ DeqHead1(self) == /\ pc[self] = "DeqHead1"
                                    ELSE /\ pc' = [pc EXCEPT ![self] = "DeqHead2"]
                         ELSE /\ pc' = [pc EXCEPT ![self] = "DeqLoopBegin"]
                   /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, stack, 
-                                  Sz1, Sz2, Sz3, Sz4, Val1, Val2, Val3, Val4, 
-                                  Succ, H1, H2, RSz1, RSz2, RVal1, RVal2, 
-                                  RSucc >>
+                                  Val1, Val2, Val3, Val4, Succ, H1, H2, RVal1, 
+                                  RVal2, RSucc >>
 
 DeqHead2(self) == /\ pc[self] = "DeqHead2"
                   /\ H2' = [H2 EXCEPT ![self] = Head(queue)]
                   /\ pc' = [pc EXCEPT ![self] = "RSuccEnq"]
                   /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, stack, 
-                                  Sz1, Sz2, Sz3, Sz4, Val1, Val2, Val3, Val4, 
-                                  Succ, H1, RSz1, RSz2, RVal1, RVal2, RSucc >>
+                                  Val1, Val2, Val3, Val4, Succ, H1, RVal1, 
+                                  RVal2, RSucc >>
 
 RSuccEnq(self) == /\ pc[self] = "RSuccEnq"
                   /\ IF (H1[self] = H2[self])
@@ -285,25 +266,23 @@ RSuccEnq(self) == /\ pc[self] = "RSuccEnq"
                              /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
                         ELSE /\ pc' = [pc EXCEPT ![self] = "DeqLoopBegin"]
                              /\ UNCHANGED << queue, MsgRead, RFlags, stack >>
-                  /\ UNCHANGED << Idx, Msgs, Sz1, Sz2, Sz3, Sz4, Val1, Val2, 
-                                  Val3, Val4, Succ, H2, RSz1, RSz2, RVal1, 
-                                  RVal2 >>
+                  /\ UNCHANGED << Idx, Msgs, Val1, Val2, Val3, Val4, Succ, H2, 
+                                  RVal1, RVal2 >>
 
 QueueIsEmpty(self) == /\ pc[self] = "QueueIsEmpty"
                       /\ RFlags' = [RFlags EXCEPT ![self] = FALSE]
                       /\ pc' = [pc EXCEPT ![self] = Head(stack[self]).pc]
                       /\ stack' = [stack EXCEPT ![self] = Tail(stack[self])]
-                      /\ UNCHANGED << queue, MsgRead, Idx, Msgs, Sz1, Sz2, Sz3, 
-                                      Sz4, Val1, Val2, Val3, Val4, Succ, H1, 
-                                      H2, RSz1, RSz2, RVal1, RVal2, RSucc >>
+                      /\ UNCHANGED << queue, MsgRead, Idx, Msgs, Val1, Val2, 
+                                      Val3, Val4, Succ, H1, H2, RVal1, RVal2, 
+                                      RSucc >>
 
 GetTail3(self) == /\ pc[self] = "GetTail3"
-                  /\ RSz2' = [RSz2 EXCEPT ![self] = Len(queue)]
-                  /\ RVal2' = [RVal2 EXCEPT ![self] = queue[RSz2'[self]]]
+                  /\ RVal2' = [RVal2 EXCEPT ![self] = queue[Len(queue)]]
                   /\ pc' = [pc EXCEPT ![self] = "AdvanceTail"]
                   /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, stack, 
-                                  Sz1, Sz2, Sz3, Sz4, Val1, Val2, Val3, Val4, 
-                                  Succ, H1, H2, RSz1, RVal1, RSucc >>
+                                  Val1, Val2, Val3, Val4, Succ, H1, H2, RVal1, 
+                                  RSucc >>
 
 AdvanceTail(self) == /\ pc[self] = "AdvanceTail"
                      /\ IF (RVal1[self] = RVal2[self])
@@ -313,8 +292,8 @@ AdvanceTail(self) == /\ pc[self] = "AdvanceTail"
                                 /\ RVal1' = RVal1
                      /\ pc' = [pc EXCEPT ![self] = "DeqLoopBegin"]
                      /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, stack, 
-                                     Sz1, Sz2, Sz3, Sz4, Val1, Val2, Val3, 
-                                     Val4, Succ, H1, H2, RSz1, RSz2, RVal2 >>
+                                     Val1, Val2, Val3, Val4, Succ, H1, H2, 
+                                     RVal2 >>
 
 Dequeue(self) == DeqLoopBegin(self) \/ DeqLoop(self) \/ DeqTail(self)
                     \/ DeqHead1(self) \/ DeqHead2(self) \/ RSuccEnq(self)
@@ -329,9 +308,8 @@ Write(self) == /\ pc[self] = "Write"
                           /\ pc' = [pc EXCEPT ![self] = "EnqLoopBegin"]
                      ELSE /\ pc' = [pc EXCEPT ![self] = "Done"]
                           /\ stack' = stack
-               /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, Sz1, Sz2, 
-                               Sz3, Sz4, Val1, Val2, Val3, Val4, Succ, H1, H2, 
-                               RSz1, RSz2, RVal1, RVal2, RSucc >>
+               /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, Val1, Val2, 
+                               Val3, Val4, Succ, H1, H2, RVal1, RVal2, RSucc >>
 
 writer(self) == Write(self)
 
@@ -340,9 +318,8 @@ Read(self) == /\ pc[self] = "Read"
                                                        pc        |->  "Read" ] >>
                                                    \o stack[self]]
               /\ pc' = [pc EXCEPT ![self] = "DeqLoopBegin"]
-              /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, Sz1, Sz2, Sz3, 
-                              Sz4, Val1, Val2, Val3, Val4, Succ, H1, H2, RSz1, 
-                              RSz2, RVal1, RVal2, RSucc >>
+              /\ UNCHANGED << queue, MsgRead, Idx, Msgs, RFlags, Val1, Val2, 
+                              Val3, Val4, Succ, H1, H2, RVal1, RVal2, RSucc >>
 
 reader(self) == Read(self)
 
@@ -356,5 +333,5 @@ Spec == Init /\ [][Next]_vars
 
 =============================================================================
 \* Modification History
-\* Last modified Sat May 06 20:56:26 MSK 2023 by bg
+\* Last modified Sat May 06 21:00:23 MSK 2023 by bg
 \* Created Sat Apr 22 10:57:36 MSK 2023 by bg
