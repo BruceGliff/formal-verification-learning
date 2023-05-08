@@ -1,0 +1,8 @@
+# possible LTL formulas
+
+1. After store a load should appear sometime.
+G(store -> F(load))
+2. No infinite stores
+!FG(store)
+3. No infinite loads
+!FG(load)

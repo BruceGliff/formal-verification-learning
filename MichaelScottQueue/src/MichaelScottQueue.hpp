@@ -50,7 +50,7 @@ public:
         if (next.ptr == nullptr) {
           if (tail.ptr->next.compare_exchange_strong(
                   next, pointer_t{pNode, next.count + 1})) {
-            std::cout << "Store\n";
+            std::cout << "store\n";
             break;
           }
         } else
@@ -83,7 +83,7 @@ public:
           t = next.ptr->value;
           if (Head.compare_exchange_strong(
                   head, pointer_t{next.ptr, head.count + 1})) {
-            std::cout << "Load\n";
+            std::cout << "load\n";
             break;
           }
         }
