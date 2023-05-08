@@ -1,2 +1,4 @@
 *-kompiled
 *.toolbox
+*.out
+*.vscode
