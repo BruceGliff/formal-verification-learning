@@ -2,3 +2,4 @@
 *.toolbox
 *.out
 *.vscode
+*build
